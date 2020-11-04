@@ -419,9 +419,11 @@ class Definition:
 class Guess(Definition):
     def __init__(self, head, exactly=None, at_least=None, at_most=None):
         Definition.__init__(self)
-        if head is None or len(head) == 0:
+        if head is None:
             raise ValueError("Unexpected empty head set for Guess")
         if isinstance(head, dict):
+            if len(head) == 0:
+                raise ValueError("Unexpected empty head set for Guess")
             self._head = ConditionalLiteral(head)
         elif isinstance(head, Atom):
             self._head = head
