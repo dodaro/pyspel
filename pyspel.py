@@ -674,16 +674,16 @@ def __create_atom(cls: ClassVar):
         if typ is int or typ is str or typ is any or typ is tuple:
             ret.append(f'if {arg} is not None:')
             if typ is not any:
-                ret.append(f'    if not isinstance({arg},{typ.__name__}):')
+                ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},{typ.__name__}):')
                 ret.append(f'        raise ValueError(f"Expected element of type {typ.__name__}, got {{type({arg})}}")')
             ret.append(f'    self.{arg} = Term({arg})')
             ret.append('else:')
             ret.append(f'    self.{arg} = Term()')
         else:
             ret.append(f'if {arg} is not None:')
-            ret.append(f'    if not isinstance({arg},{typ.__name__}):')
+            ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},{typ.__name__}):')
             ret.append(f'        raise ValueError(f"Expected element of type {typ.__name__}, got {{type({arg})}}")')
-            ret.append(f'    if not isinstance({arg},Atom):')
+            ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},Atom):')
             ret.append(f'        raise ValueError(f"{typ.__name__} is not an atom, did you forget the annotation @atom?")')
             ret.append(f'    self.{arg} = {arg}')
             ret.append('else:')
