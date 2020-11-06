@@ -1,91 +1,50 @@
 from pyspel import *
 
 
-class Color(Atom):
-
-    def __init__(self, value=None):
-        Atom.__init__(self, predicate=Predicate("color"))
-        if value is not None:
-            self.__value = Term(value)
-        else:
-            self.__value = Term()
-
-    @property
-    def value(self):
-        return self.__value
+@atom
+class Color:
+    value: any
 
 
-class Node(Atom):
-
-    def __init__(self, value=None):
-        Atom.__init__(self, predicate=Predicate("node"))
-        if value is not None:
-            self.__value = Term(value)
-        else:
-            self.__value = Term()
-
-    @property
-    def value(self):
-        return self.__value
+@atom
+class Node:
+    value: int
 
 
-class Edge(Atom):
-
-    def __init__(self, node1=None, node2=None):
-        Atom.__init__(self, predicate=Predicate("edge"))
-        if node1 is not None:
-            self.__node1 = node1
-        else:
-            self.__node1 = Node()
-
-        if node2 is not None:
-            self.__node2 = node2
-        else:
-            self.__node2 = Node()
-
-    @property
-    def node1(self):
-        return self.__node1
-
-    @property
-    def node2(self):
-        return self.__node2
+@atom
+class Edge:
+    node1: Node
+    node2: Node
 
 
-class Assign(Atom):
+@atom
+class Assign:
+    node: Node
+    color: Color
 
-    def __init__(self, node=None, color=None):
-        Atom.__init__(self, predicate=Predicate("assign"))
-        if node is not None:
-            self.__node = node
-        else:
-            self.__node = Node()
+"""
+class Empty:
+    pass
 
-        if color is not None:
-            self.__color = color
-        else:
-            self.__color = Color()
-
-    @property
-    def node(self):
-        return self.__node
-
-    @property
-    def color(self):
-        return self.__color
-
+Empty = create_atom(Empty)
+e = Empty()
+"""
 
 p = Problem()
 # create facts
 for assignment in range(1, 4):
-    n = Node(assignment)
-    p += n
+    p += Node(assignment)
 
 p += Edge(Node(1), Node(2))
 p += Edge(Node(2), Node(3))
 p += Color((0, 0, 255))
 p += Color((255, 0, 0))
 p += Color((0, 255, 0))
+#p += Color("blue")
+#p += Color("red")
+#p += Color("green")
+
+
 
 # guess exactly one color for each node
 with Node() as n, Color() as c:

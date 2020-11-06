@@ -7,7 +7,8 @@ import os
 import json
 import signal
 from contextlib import contextmanager
-from typing import Any
+from types import FunctionType, CodeType
+from typing import Any, ClassVar
 
 
 class TimeoutException(Exception):
@@ -177,7 +178,7 @@ class Predicate:
 
 
 class Atom:
-    __predicate: str
+    __predicate: Predicate
 
     def __init__(self, predicate):
         self.__predicate = predicate
@@ -618,7 +619,12 @@ class SolverWrapper:
     def __init__(self, solver_path=None):
         self._solver_path = solver_path
 
-    def solve(self, program, options=[]):
+    def solve(self, program, options=None):
+        if options is None:
+            options = []
+        if not isinstance(options, list):
+            raise ValueError("Expected list of options, but received a %s" % (type(options)))
+
         options.append("--outf=2")
         options.append("--quiet=0,1")
         (stdout, stderr, exit_code) = _run_solver(str(program), self._solver_path, options)
@@ -654,3 +660,69 @@ class SolverWrapper:
             return r
         else:
             return Result(Result.UNKNOWN)
+
+
+def __create_atom(cls: ClassVar):
+    class_name = cls.__name__
+    pred_name = class_name[0].lower() + class_name[1:]
+    annotations = getattr(cls, '__annotations__', {})
+    init_args = list(f'{a}=None' for a in annotations)
+
+    def init_arg(arg: str, typ: type):
+        # TODO: check typ
+        ret = []
+        if typ is int or typ is str or typ is any or typ is tuple:
+            ret.append(f'if {arg} is not None:')
+            if typ is not any:
+                ret.append(f'    if not isinstance({arg},{typ.__name__}):')
+                ret.append(f'        raise ValueError(f"Expected element of type {typ.__name__}, got {{type({arg})}}")')
+            ret.append(f'    self.{arg} = Term({arg})')
+            ret.append('else:')
+            ret.append(f'    self.{arg} = Term()')
+        else:
+            ret.append(f'if {arg} is not None:')
+            ret.append(f'    if not isinstance({arg},{typ.__name__}):')
+            ret.append(f'        raise ValueError(f"Expected element of type {typ.__name__}, got {{type({arg})}}")')
+            ret.append(f'    if not isinstance({arg},Atom):')
+            ret.append(f'        raise ValueError(f"{typ.__name__} is not an atom, did you forget the annotation @atom?")')
+            ret.append(f'    self.{arg} = {arg}')
+            ret.append('else:')
+            ret.append(f'    self.{arg} = {typ.__name__}()')
+        return ret
+
+    def has_method(method: str) -> bool:
+        return getattr(cls, method, None) != getattr(object, method, None)
+
+    def create_init():
+        if has_method('__init__'):
+            raise ValueError("cannot process classes with __init__() constructor")
+        glbs = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
+        inherit = f'Atom.__init__(self, predicate=Predicate("{pred_name}"))'
+        if len(init_args) > 0:
+            args = ('self, ') + ', '.join(init_args)
+            sig = f"def __init__({args}):"
+            body = []
+            for k, v in annotations.items():
+                body.extend(init_arg(k, v))
+            str_body = '\n    '.join(body)
+        else:
+            sig = f"def __init__(self):"
+            str_body = "pass"
+        code = compile(f"{sig}\n    {inherit}\n    {str_body}", f'<pyspel|constructor of {class_name}|>', "exec")
+
+        c = None
+        for i in code.co_consts:
+            if isinstance(i, CodeType):
+                c = i
+                break
+        f = FunctionType(c, glbs)
+        f.__defaults__ = tuple([None for i in init_args])
+        return type(class_name, (Atom,), {f"__init__": f})
+
+    return create_init()
+
+
+def atom(cls: ClassVar) -> ClassVar:
+    cls = __create_atom(cls)
+    globals()[cls.__name__] = cls
+    return cls
