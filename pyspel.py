@@ -298,7 +298,9 @@ class Aggregate(Atom):
     def __init__(self, aggregate_set, aggregate_type):
         Atom.__init__(self, '')
         if aggregate_type is None or aggregate_type != 'count' and aggregate_type != 'sum' and aggregate_type != 'min' and aggregate_type != 'max':
-            raise ValueError("Unexpected type")
+            raise ValueError(f"Unexpected type {aggregate_type} for aggregate")
+        if not isinstance(aggregate_set, dict):
+            raise ValueError(f"Expected dictionary as set for aggregate, got {type(aggregate_set)}")
         self.aggregate_type = aggregate_type
         self.aggregate_set = aggregate_set
         self.operator = None
@@ -380,8 +382,12 @@ class Definition:
         for element in condition:
             if isinstance(element, dict):
                 self._body.append(ConditionalLiteral(element))
-            else:
+            elif isinstance(element, list):
+                self._body.extend(element)
+            elif isinstance(element, Atom) or isinstance(element, Literal) or isinstance(element, ConditionalLiteral):
                 self._body.append(element)
+            else:
+                raise ValueError(f"Unexpected element of type {type(element)} in when condition")
         return self
 
     def get_body(self):
@@ -515,30 +521,21 @@ class When:
 
     def __init__(self, *condition):
         assert isinstance(condition, tuple)
-        self._body = []
-        for element in condition:
-            if isinstance(element, dict):
-                self._body.append(ConditionalLiteral(element))
-            else:
-                self._body.append(element)
+        self._condition = condition
 
     def and_also(self, *condition):
         assert isinstance(condition, tuple)
-        for element in condition:
-            if isinstance(element, dict):
-                self._body.append(ConditionalLiteral(element))
-            else:
-                self._body.append(element)
+        self._condition += condition
         return self
 
     def holds(self, *disjunction):
-        return Assert(*disjunction).when(*self._body)
+        return Assert(*disjunction).when(*self._condition)
 
     def define(self, *head):
-        return Define(*head).when(*self._body)
+        return Define(*head).when(*self._condition)
 
     def guess(self, head, exactly=None, at_least=None, at_most=None):
-        return Guess(head, exactly, at_least, at_most).when(*self._body)
+        return Guess(head, exactly, at_least, at_most).when(*self._condition)
 
 
 class Problem:
@@ -666,7 +663,7 @@ def __create_atom(cls: ClassVar):
     class_name = cls.__name__
     pred_name = class_name[0].lower() + class_name[1:]
     annotations = getattr(cls, '__annotations__', {})
-    init_args = list(f'{a}=None' for a in annotations)
+    init_args = list(f'{a}' for a in annotations)
 
     def init_arg(arg: str, typ: type):
         # TODO: check typ
@@ -717,7 +714,13 @@ def __create_atom(cls: ClassVar):
                 break
         f = FunctionType(c, glbs)
         f.__defaults__ = tuple([None for i in init_args])
-        return type(class_name, (Atom,), {f"__init__": f})
+        setattr(cls, "__init__", f)
+
+        my_dict = {}
+        for el in cls.__dict__:
+            if el != "__dict__":
+                my_dict[el] = cls.__dict__[el]
+        return type(class_name, (Atom,), my_dict)
 
     return create_init()
 

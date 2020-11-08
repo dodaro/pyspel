@@ -22,13 +22,6 @@ class Assign:
     node: Node
     color: Color
 
-"""
-class Empty:
-    pass
-
-Empty = create_atom(Empty)
-e = Empty()
-"""
 
 p = Problem()
 # create facts
@@ -40,10 +33,9 @@ p += Edge(Node(2), Node(3))
 p += Color((0, 0, 255))
 p += Color((255, 0, 0))
 p += Color((0, 255, 0))
-#p += Color("blue")
-#p += Color("red")
-#p += Color("green")
-
+# p += Color("blue")
+# p += Color("red")
+# p += Color("green")
 
 
 # guess exactly one color for each node
