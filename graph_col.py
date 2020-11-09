@@ -37,7 +37,30 @@ p += Color((0, 255, 0))
 # p += Color("red")
 # p += Color("green")
 
+# guess exactly one color for each node
+#def guess(node, color):
+#    return When(node).guess({Assign(node, color): color}, exactly=1)
 
+
+def guess():
+    return When(Node(_as="n")).guess({Assign(Node(_="n"), Color(_as="c")): Color(_="c")}, exactly=1)
+
+
+# check that each node is assigned to exactly one color (not needed, already specified in choice rule)
+def check_node_assignment(node, color):
+    return When(node).holds(Count({color: Assign(node, color)}) == 1)
+
+
+# two nodes assigned with the same color cannot be linked
+def check_edge_not_colored(node1, node2, color1, color2):
+    return When(Assign(node1, color1), Assign(node2, color2), Edge(node1, node2), node1.value < node2.value).holds(color1.value != color2.value)
+
+
+#p += guess(node=Node(), color=Color())
+p += guess()
+p += check_node_assignment(node=Node(), color=Color())
+p += check_edge_not_colored(node1=Node(), node2=Node(), color1=Color(), color2=Color())
+"""
 # guess exactly one color for each node
 with Node() as n, Color() as c:
     p += When(n).guess({Assign(n, c): c}, exactly=1)
@@ -49,6 +72,7 @@ with Node() as n, Color() as c:
 # two nodes assigned with the same color cannot be linked
 with Node() as n1, Node() as n2, Color() as c1, Color() as c2:
     p += When(Assign(n1, c1), Assign(n2, c2), Edge(n1, n2), n1.value < n2.value).holds(c1.value != c2.value)
+"""
 
 solver = SolverWrapper(solver_path="/usr/local/bin/clingo")
 

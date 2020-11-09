@@ -662,8 +662,14 @@ class SolverWrapper:
 def __create_atom(cls: ClassVar):
     class_name = cls.__name__
     pred_name = class_name[0].lower() + class_name[1:]
+    globals()[cls.__name__] = cls
     annotations = getattr(cls, '__annotations__', {})
     init_args = list(f'{a}' for a in annotations)
+    for i in ["_as", "_", "__registered"]:
+        if i in init_args:
+            raise ValueError(f"{i} is a reserved keyword in pyspel, please use another name in class {class_name}")
+    init_args.append("_as")
+    init_args.append("_")
 
     def init_arg(arg: str, typ: type):
         # TODO: check typ
@@ -681,7 +687,8 @@ def __create_atom(cls: ClassVar):
             ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},{typ.__name__}):')
             ret.append(f'        raise ValueError(f"Expected element of type {typ.__name__}, got {{type({arg})}}")')
             ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},Atom):')
-            ret.append(f'        raise ValueError(f"{typ.__name__} is not an atom, did you forget the annotation @atom?")')
+            ret.append(
+                f'        raise ValueError(f"{typ.__name__} is not an atom, did you forget the annotation @atom?")')
             ret.append(f'    self.{arg} = {arg}')
             ret.append('else:')
             ret.append(f'    self.{arg} = {typ.__name__}()')
@@ -695,16 +702,29 @@ def __create_atom(cls: ClassVar):
             raise ValueError("cannot process classes with __init__() constructor")
         glbs = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
         inherit = f'Atom.__init__(self, predicate=Predicate("{pred_name}"))'
+
+        body = [f"if _as is not None and not isinstance(_as, str):",
+                f'    raise ValueError(f"Expected str for _as, got {{type(_as)}}")',
+                f"if _ is not None and not isinstance(_, str):",
+                f'    raise ValueError(f"Expected str for _, got {{type(_)}}")',
+                f"if _ is not None and _as is not None:",
+                f'    raise ValueError(f"Expected at most one element between _ and _as")', f"if _as is not None:",
+                f'    {class_name}.__registered[_as]=self', f"if _ is not None:", f"    if _ not in self.__registered:",
+                f'        raise ValueError(f"{{_}} is not registered, did you forget to use _as before?")']
+        for i in init_args:
+            if i != "_" and i != "_as":
+                body.append(f'    if {i} is not None:')
+                body.append(f'        raise ValueError("if _ is used all parameters must be None")')
+                body.append(f'    self.{i} = {class_name}.__registered[_].{i}')
+        body.append(f'    return')
         if len(init_args) > 0:
             args = ('self, ') + ', '.join(init_args)
             sig = f"def __init__({args}):"
-            body = []
             for k, v in annotations.items():
                 body.extend(init_arg(k, v))
-            str_body = '\n    '.join(body)
         else:
             sig = f"def __init__(self):"
-            str_body = "pass"
+        str_body = '\n    '.join(body)
         code = compile(f"{sig}\n    {inherit}\n    {str_body}", f'<pyspel|constructor of {class_name}|>', "exec")
 
         c = None
@@ -714,6 +734,7 @@ def __create_atom(cls: ClassVar):
                 break
         f = FunctionType(c, glbs)
         f.__defaults__ = tuple([None for i in init_args])
+        setattr(cls, "__registered", dict())
         setattr(cls, "__init__", f)
 
         my_dict = {}
@@ -729,3 +750,11 @@ def atom(cls: ClassVar) -> ClassVar:
     cls = __create_atom(cls)
     globals()[cls.__name__] = cls
     return cls
+
+
+def var(name: str) -> Term:
+    if not isinstance(name, str):
+        raise ValueError(f"Expected str for name, got {type(name)}")
+    if len(name) == 0:
+        raise ValueError("Name cannot be empty")
+    return Term(ObjectVariable("VAR_"+name))
