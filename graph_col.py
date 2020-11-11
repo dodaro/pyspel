@@ -43,7 +43,7 @@ p += Color((0, 255, 0))
 
 
 def guess():
-    return When(Node(_as="n")).guess({Assign(Node(_="n"), Color(_as="c")): Color(_="c")}, exactly=1)
+    return When(Node().s("n")).guess({Assign(Node.l("n"), Color().s("c")): Color.l("c")}, exactly=1)
 
 
 # check that each node is assigned to exactly one color (not needed, already specified in choice rule)

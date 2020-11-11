@@ -299,22 +299,25 @@ class Aggregate(Atom):
         Atom.__init__(self, '')
         if aggregate_type is None or aggregate_type != 'count' and aggregate_type != 'sum' and aggregate_type != 'min' and aggregate_type != 'max':
             raise ValueError(f"Unexpected type {aggregate_type} for aggregate")
-        if not isinstance(aggregate_set, dict):
-            raise ValueError(f"Expected dictionary as set for aggregate, got {type(aggregate_set)}")
+        if aggregate_type == 'count' and not isinstance(aggregate_set, dict) and not isinstance(aggregate_set, set):
+            raise ValueError(f"Expected dictionary or set as set for {aggregate_type}, got {type(aggregate_set)}")
+        if aggregate_type != 'count' and not isinstance(aggregate_set, dict):
+            raise ValueError(f"Expected dictionary as set for {aggregate_type}, got {type(aggregate_set)}")
         self.aggregate_type = aggregate_type
         self.aggregate_set = aggregate_set
         self.operator = None
         self.bound = None
 
     def __str__(self):
-        elements = []
-        for element in self.aggregate_set:
-            elements.append({element: self.aggregate_set[element]})
         if self.operator is None:
             raise ValueError("Missing operator")
         if self.bound is None:
             raise ValueError("Missing bound")
-        return "#%s{%s} %s %s" % (self.aggregate_type, str(ConditionalLiteral(elements)), self.operator, self.bound)
+        if isinstance(self.aggregate_set, dict):
+            elements = [{element: self.aggregate_set[element]} for element in self.aggregate_set]
+            return "#%s{%s} %s %s" % (self.aggregate_type, str(ConditionalLiteral(elements)), self.operator, self.bound)
+        else:
+            return "#%s%s %s %s" % (self.aggregate_type, self.aggregate_set, self.operator, self.bound)
 
     def __repr__(self):
         return str(self)
@@ -665,6 +668,7 @@ def __create_atom(cls: ClassVar):
     globals()[cls.__name__] = cls
     annotations = getattr(cls, '__annotations__', {})
     init_args = list(f'{a}' for a in annotations)
+    glbs = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
     for i in ["_as", "_", "__registered"]:
         if i in init_args:
             raise ValueError(f"{i} is a reserved keyword in pyspel, please use another name in class {class_name}")
@@ -697,19 +701,56 @@ def __create_atom(cls: ClassVar):
     def has_method(method: str) -> bool:
         return getattr(cls, method, None) != getattr(object, method, None)
 
-    def create_init():
+    def create_method(sig: str, body: list, defaults: list) -> FunctionType:
+        str_body = '\n    '.join(body)
+
+        code = compile(f"{sig}\n    {str_body}", f'<pyspel|constructor of {class_name}|>', "exec")
+        c = None
+        for i in code.co_consts:
+            if isinstance(i, CodeType):
+                c = i
+                break
+        f = FunctionType(c, glbs)
+        f.__defaults__ = tuple(defaults)
+        return f
+
+    def create_load_store_methods():
+        body_store = [f"if _as is not None and not isinstance(_as, str):",
+                      f'    raise ValueError(f"Expected str for _as, got {{type(_as)}}")',
+                      f"if _as is None or len(_as) == 0:",
+                      f'    _as = "__default__"',
+                      f'{class_name}.__registered[_as]=self',
+                      f'return self']
+        setattr(cls, "s", create_method(sig="def s(self, _as):", body=body_store, defaults=[None]))
+
+        body_load = [f"if _ is not None and not isinstance(_, str):",
+                     f'    raise ValueError(f"Expected str for _, got {{type(_)}}")',
+                     f"if _ is None or len(_) == 0:",
+                     f'    _ = "__default__"',
+                     f"if _ not in {class_name}.__registered:",
+                     f'    raise ValueError(f"{{_}} is not registered, did you forget to use _as before?")',
+                     f'return {class_name}.__registered[_]']
+        setattr(cls, "l", classmethod(create_method(sig="def l(cls, _):", body=body_load, defaults=[None])))
+
+    def create_new_object():
         if has_method('__init__'):
             raise ValueError("cannot process classes with __init__() constructor")
-        glbs = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
         inherit = f'Atom.__init__(self, predicate=Predicate("{pred_name}"))'
 
-        body = [f"if _as is not None and not isinstance(_as, str):",
+        body = [f'if _as is not None and not isinstance(_as, str):',
                 f'    raise ValueError(f"Expected str for _as, got {{type(_as)}}")',
-                f"if _ is not None and not isinstance(_, str):",
+                f'if _ is not None and not isinstance(_, str):',
                 f'    raise ValueError(f"Expected str for _, got {{type(_)}}")',
-                f"if _ is not None and _as is not None:",
-                f'    raise ValueError(f"Expected at most one element between _ and _as")', f"if _as is not None:",
-                f'    {class_name}.__registered[_as]=self', f"if _ is not None:", f"    if _ not in self.__registered:",
+                f'if _ is not None and _as is not None:',
+                f'    raise ValueError(f"Expected at most one element between _ and _as")',
+                f'if _as is not None:',
+                f'    if len(_as) == 0:',
+                f'        _as = "__default__"',
+                f'    {class_name}.__registered[_as]=self',
+                f'if _ is not None:',
+                f'    if len(_) == 0:',
+                f'        _ = "__default__"',
+                f'    if _ not in {class_name}.__registered:',
                 f'        raise ValueError(f"{{_}} is not registered, did you forget to use _as before?")']
         for i in init_args:
             if i != "_" and i != "_as":
@@ -736,6 +777,7 @@ def __create_atom(cls: ClassVar):
         f.__defaults__ = tuple([None for i in init_args])
         setattr(cls, "__registered", dict())
         setattr(cls, "__init__", f)
+        create_load_store_methods()
 
         my_dict = {}
         for el in cls.__dict__:
@@ -743,7 +785,7 @@ def __create_atom(cls: ClassVar):
                 my_dict[el] = cls.__dict__[el]
         return type(class_name, (Atom,), my_dict)
 
-    return create_init()
+    return create_new_object()
 
 
 def atom(cls: ClassVar) -> ClassVar:
