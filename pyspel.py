@@ -583,6 +583,28 @@ class Problem:
             self.add(other)
         return self
 
+    def possible_instances(self, atom, solver_path=None):
+        if not isinstance(atom, Atom):
+            raise ValueError(f"Expected atom, got {type(atom)}")
+        (stdout, stderr, exit_code) = _run_solver(str(self), solver_path, ["--output=smodels"])
+        if exit_code in invalid_exit_codes:
+            raise ValueError(f"ASP Error: {stderr}")
+        elif len(stderr) != 0:
+            eprint(f"Warning {stderr}")
+
+        all_atoms = []
+        lines = stdout.splitlines()
+        start_atoms = False
+        for line in lines:
+            if line == "0" and not start_atoms:
+                start_atoms = True
+            elif line == "0" and start_atoms:
+                break
+            elif start_atoms:
+                all_atoms.append(line.split(" ", 1)[1])
+        a = Answer(all_atoms, [], False)
+        return a.get_atom_occurrences(atom)
+
 
 class Answer:
 
@@ -799,4 +821,4 @@ def var(name: str) -> Term:
         raise ValueError(f"Expected str for name, got {type(name)}")
     if len(name) == 0:
         raise ValueError("Name cannot be empty")
-    return Term(ObjectVariable("VAR_"+name))
+    return Term(ObjectVariable("VAR_" + name))

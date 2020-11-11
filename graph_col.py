@@ -33,6 +33,7 @@ p += Edge(Node(2), Node(3))
 p += Color((0, 0, 255))
 p += Color((255, 0, 0))
 p += Color((0, 255, 0))
+
 # p += Color("blue")
 # p += Color("red")
 # p += Color("green")
