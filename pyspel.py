@@ -15,10 +15,6 @@ class TimeoutException(Exception):
     pass
 
 
-def eprint(*args):
-    print(args, file=sys.stderr)
-
-
 invalid_exit_codes = {1, 65}
 
 
@@ -435,10 +431,12 @@ class Guess(Definition):
             if len(head) == 0:
                 raise ValueError("Unexpected empty head set for Guess")
             self._head = ConditionalLiteral(head)
+        elif isinstance(head, set):
+            self._head = head
         elif isinstance(head, Atom):
             self._head = head
         else:
-            raise ValueError("Unexpected value for Guess")
+            raise ValueError(f"Expected dict, set, or Atom as head for guess, got {type(head)}")
         self.exactly = exactly
         self.at_least = at_least
         self.at_most = at_most
@@ -446,16 +444,22 @@ class Guess(Definition):
             raise ValueError("Error while building guess: exactly is incompatible with at_least and at_most")
 
     def get_head(self):
-        if self.exactly is not None:
-            head = f"{{{self._head}}} = {self.exactly}"
-        elif self.at_least is not None and self.at_most is not None:
-            head = f"{self.at_least} <= {{{self._head}}} <= {self.at_most}"
-        elif self.at_least is not None:
-            head = f"{self.at_least} <= {{{self._head}}}"
-        elif self.at_most is not None:
-            head = f"{{{self._head}}} <= {self.at_most}"
+        if isinstance(self._head, set):
+            tmp = ';'.join([str(el) for el in self._head])
+            my_head = f"{{{tmp}}}"
         else:
-            head = f"{{{self._head}}}"
+            my_head = f"{{{self._head}}}"
+
+        if self.exactly is not None:
+            head = f"{my_head} = {self.exactly}"
+        elif self.at_least is not None and self.at_most is not None:
+            head = f"{self.at_least} <= {my_head} <= {self.at_most}"
+        elif self.at_least is not None:
+            head = f"{self.at_least} <= {my_head}"
+        elif self.at_most is not None:
+            head = f"{my_head} <= {self.at_most}"
+        else:
+            head = f"{my_head}"
         return head
 
 
@@ -541,6 +545,12 @@ class When:
         return Guess(head, exactly, at_least, at_most).when(*self._condition)
 
 
+def _print_warning(stderr):
+    print("ASP warning message:", file=sys.stderr)
+    for line in stderr.splitlines():
+        print(line, file=sys.stderr)
+
+
 class Problem:
     ASP_CORE = 0
     GRINGO = 1
@@ -564,7 +574,7 @@ class Problem:
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
-            eprint(f"Warning {stderr}")
+            _print_warning(stderr)
 
     def __str__(self):
         res = ""
@@ -590,7 +600,7 @@ class Problem:
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
-            eprint(f"Warning {stderr}")
+            _print_warning(stderr)
 
         all_atoms = []
         lines = stdout.splitlines()
@@ -641,7 +651,7 @@ class SolverWrapper:
     def __init__(self, solver_path=None):
         self._solver_path = solver_path
 
-    def solve(self, program, options=None):
+    def solve(self, problem, options=None):
         if options is None:
             options = []
         if not isinstance(options, list):
@@ -649,11 +659,11 @@ class SolverWrapper:
 
         options.append("--outf=2")
         options.append("--quiet=0,1")
-        (stdout, stderr, exit_code) = _run_solver(str(program), self._solver_path, options)
+        (stdout, stderr, exit_code) = _run_solver(str(problem), self._solver_path, options)
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
-            eprint(f"Warning {stderr}")
+            _print_warning(stderr)
 
         res = json.loads(stdout)
         if res['Result'] == 'UNSATISFIABLE':
