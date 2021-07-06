@@ -1,34 +1,18 @@
 import subprocess
 import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
 from dataclasses import field
 import os
 import json
-import signal
-from contextlib import contextmanager
+from time import sleep
 from types import FunctionType, CodeType
 from typing import Any, ClassVar
 
-
-class TimeoutException(Exception):
-    pass
-
+__version__ = "1.0.0"
 
 invalid_exit_codes = {1, 65}
-
-
-@contextmanager
-def asp_time_limit(seconds):
-    def signal_handler(signum, frame):
-        raise TimeoutException("Timed out!")
-
-    signal.signal(signal.SIGALRM, signal_handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
 
 
 def domain(min, max):
@@ -68,8 +52,8 @@ def _get_terms(predicate_name, atom_name):
     return elements
 
 
-def _run_solver(rules, solver_path, options):
-    filename = "tmp_program_%s" % uuid.uuid4()
+def _run_solver(rules, solver_path, options, timeout):
+    filename = tempfile.gettempdir() + os.path.sep + "pyspel_tmp_program_%s" % uuid.uuid4()
     with open(filename, "w+") as f:
         f.write(rules)
         f.close()
@@ -80,11 +64,18 @@ def _run_solver(rules, solver_path, options):
         commands = [solver_path]
     commands.extend(options)
     commands.append(filename)
-    solver = subprocess.run(commands, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout = solver.stdout.decode()
-    stderr = solver.stderr.decode()
+    solver = subprocess.Popen(commands, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    killed = False
+    try:
+        stdout, stderr = solver.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        solver.terminate()
+        sleep(3)
+        solver.kill()
+        stdout, stderr = solver.communicate()
+        killed = True
     os.remove(filename)
-    return stdout, stderr, solver.returncode
+    return stdout.decode(), stderr.decode(), solver.returncode, killed
 
 
 @dataclass(frozen=True)
@@ -183,10 +174,10 @@ class Atom:
     def predicate(self):
         return self.__predicate
 
-    def create_atom_from_str(self, atom):
-        if not isinstance(atom, str):
+    def create_atom_from_str(self, atom_name):
+        if not isinstance(atom_name, str):
             raise ValueError("Expected string")
-        my_terms = _get_terms(predicate_name=self.predicate.name, atom_name=atom)
+        my_terms = _get_terms(predicate_name=self.predicate.name, atom_name=atom_name)
         assert len(my_terms) <= len(self.__dict__) - 1
         i = 0
         terms = []
@@ -243,8 +234,8 @@ class Atom:
 
 class Literal:
 
-    def __init__(self, atom, positive):
-        self.__atom = atom
+    def __init__(self, atom_name, positive):
+        self.__atom = atom_name
         if positive:
             self.__polarity = ''
         else:
@@ -274,7 +265,14 @@ class ConditionalLiteral:
         for element in element_:
             if isinstance(element_[element], tuple):
                 element_[element] = str(element_[element])[1:-1]
-            all_elements.append("%s : %s" % (element, element_[element]))
+            if type(element) is tuple:
+                res = ""
+                for i in element:
+                    res += f"{i},"
+                res = res[:-1]
+                all_elements.append("%s : %s" % (res, element_[element]))
+            else:
+                all_elements.append("%s : %s" % (element, element_[element]))
         return "; ".join(all_elements)
 
     def __str__(self):
@@ -305,15 +303,18 @@ class Aggregate(Atom):
         self.bound = None
 
     def __str__(self):
+        op_ = f" {self.operator}"
+        bound_ = f" {self.bound}"
         if self.operator is None:
-            raise ValueError("Missing operator")
-        if self.bound is None:
+            op_ = ""
+            bound_ = ""
+        elif self.bound is None:
             raise ValueError("Missing bound")
         if isinstance(self.aggregate_set, dict):
             elements = [{element: self.aggregate_set[element]} for element in self.aggregate_set]
-            return "#%s{%s} %s %s" % (self.aggregate_type, str(ConditionalLiteral(elements)), self.operator, self.bound)
+            return "#%s{%s}%s%s" % (self.aggregate_type, str(ConditionalLiteral(elements)), op_, bound_)
         else:
-            return "#%s%s %s %s" % (self.aggregate_type, self.aggregate_set, self.operator, self.bound)
+            return "#%s%s%s%s" % (self.aggregate_type, self.aggregate_set, op_, bound_)
 
     def __repr__(self):
         return str(self)
@@ -349,26 +350,26 @@ class Aggregate(Atom):
 
 class Count(Aggregate):
 
-    def __init__(self, set):
-        Aggregate.__init__(self, aggregate_set=set, aggregate_type="count")
+    def __init__(self, elements):
+        Aggregate.__init__(self, aggregate_set=elements, aggregate_type="count")
 
 
 class Sum(Aggregate):
 
-    def __init__(self, set):
-        Aggregate.__init__(self, aggregate_set=set, aggregate_type="sum")
+    def __init__(self, elements):
+        Aggregate.__init__(self, aggregate_set=elements, aggregate_type="sum")
 
 
 class Min(Aggregate):
 
-    def __init__(self, set):
-        Aggregate.__init__(self, aggregate_set=set, aggregate_type="min")
+    def __init__(self, elements):
+        Aggregate.__init__(self, aggregate_set=elements, aggregate_type="min")
 
 
 class Max(Aggregate):
 
-    def __init__(self, set):
-        Aggregate.__init__(self, aggregate_set=set, aggregate_type="max")
+    def __init__(self, elements):
+        Aggregate.__init__(self, aggregate_set=elements, aggregate_type="max")
 
 
 class Definition:
@@ -402,7 +403,7 @@ class Definition:
         raise ValueError("Cannot use get_head of Definition class. Use Guess, Define, or Assert")
 
     def check(self, solver_path=None):
-        (stdout, stderr, exit_code) = _run_solver(str(self), solver_path, ["--text"])
+        (stdout, stderr, exit_code, killed) = _run_solver(rules=str(self), solver_path=solver_path, options=["--text"], timeout=None)
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         return self
@@ -570,7 +571,7 @@ class Problem:
         self.rules.append(definition)
 
     def check(self, solver_path=None):
-        (stdout, stderr, exit_code) = _run_solver(str(self), solver_path, ["--text"])
+        (stdout, stderr, exit_code, killed) = _run_solver(rules=str(self), solver_path=solver_path, options=["--text"], timeout=None)
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
@@ -593,10 +594,10 @@ class Problem:
             self.add(other)
         return self
 
-    def possible_instances(self, atom, solver_path=None):
-        if not isinstance(atom, Atom):
-            raise ValueError(f"Expected atom, got {type(atom)}")
-        (stdout, stderr, exit_code) = _run_solver(str(self), solver_path, ["--output=smodels"])
+    def possible_instances(self, atom_name, solver_path=None):
+        if not isinstance(atom_name, Atom):
+            raise ValueError(f"Expected atom, got {type(atom_name)}")
+        (stdout, stderr, exit_code, killed) = _run_solver(rules=str(self), solver_path=solver_path, options=["--output=smodels"], timeout=None)
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
@@ -613,7 +614,7 @@ class Problem:
             elif start_atoms:
                 all_atoms.append(line.split(" ", 1)[1])
         a = Answer(all_atoms, [], False)
-        return a.get_atom_occurrences(atom)
+        return a.get_atom_occurrences(atom_name)
 
 
 class Answer:
@@ -623,14 +624,40 @@ class Answer:
         self.costs = costs
         self.optimal = optimal
 
-    def get_atom_occurrences(self, atom):
-        if not isinstance(atom, Atom):
+    def get_atom_occurrences(self, atom_name):
+        if not isinstance(atom_name, Atom):
             raise ValueError("Expected atom as parameter")
         res = []
         for at in self._answer_set:
-            if at.startswith(atom.predicate.name):
-                res.append(atom.create_atom_from_str(at))
+            if at.startswith(atom_name.predicate.name):
+                res.append(atom_name.create_atom_from_str(at))
         return res
+
+
+class ASPUtilities:
+
+    @classmethod
+    def process_asp_facts(cls, filename, atoms, solver_path=None):
+        if not isinstance(atoms, list):
+            raise ValueError("Expected list as parameter")
+        for atom_ in atoms:
+            if not isinstance(atom_, Atom):
+                raise ValueError(f"Expected list of atoms as parameter, got {type(atom_)}")
+
+        instance = open(filename, "r")
+        (stdout, stderr, exit_code, killed) = _run_solver(rules='\n'.join(instance.readlines()), solver_path=solver_path, options=["--outf=2"], timeout=None)
+        res = json.loads(stdout)
+        if res['Result'] == 'SATISFIABLE':
+            costs = []
+            r = Result(Result.HAS_SOLUTION)
+            assert len(res['Call'][0]['Witnesses']) == 1
+            answer_set = res['Call'][0]['Witnesses'][0]
+            if 'Value' in answer_set:
+                answer = Answer(answer_set['Value'], costs, False)
+                output = []
+                for atom_name in atoms:
+                    output.extend(answer.get_atom_occurrences(atom_name=atom_name))
+            return output
 
 
 class Result:
@@ -650,16 +677,24 @@ class SolverWrapper:
 
     def __init__(self, solver_path=None):
         self._solver_path = solver_path
+        self.killed = False
 
-    def solve(self, problem, options=None):
+    def solve(self, problem, options=None, print_solver_output=False, timeout=None):
+        self.killed = False
         if options is None:
             options = []
         if not isinstance(options, list):
             raise ValueError("Expected list of options, but received a %s" % (type(options)))
+        for opt in options:
+            if "--outf" in opt:
+                raise ValueError("Option --outf is reserved")
 
         options.append("--outf=2")
         options.append("--quiet=0,1")
-        (stdout, stderr, exit_code) = _run_solver(str(problem), self._solver_path, options)
+        (stdout, stderr, exit_code, killed) = _run_solver(str(problem), self._solver_path, options, timeout=timeout)
+        self.killed = killed
+        if print_solver_output:
+            print(stdout)
         if exit_code in invalid_exit_codes:
             raise ValueError(f"ASP Error: {stderr}")
         elif len(stderr) != 0:
@@ -696,11 +731,11 @@ class SolverWrapper:
 
 def __create_atom(cls: ClassVar):
     class_name = cls.__name__
-    pred_name = class_name[0].lower() + class_name[1:]
+    predicate_name = class_name[0].lower() + class_name[1:]
     globals()[cls.__name__] = cls
     annotations = getattr(cls, '__annotations__', {})
     init_args = list(f'{a}' for a in annotations)
-    glbs = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
+    globals_ = {k: v for k, v in globals().items() if k[0:2] == '__' or k[0].isupper()}
     for i in ["_as", "_", "__registered"]:
         if i in init_args:
             raise ValueError(f"{i} is a reserved keyword in pyspel, please use another name in class {class_name}")
@@ -708,9 +743,8 @@ def __create_atom(cls: ClassVar):
     init_args.append("_")
 
     def init_arg(arg: str, typ: type):
-        # TODO: check typ
         ret = []
-        if typ is int or typ is str or typ is any or typ is tuple:
+        if typ is int or typ is str or typ is bool or typ is any or typ is tuple:
             ret.append(f'if {arg} is not None:')
             if typ is not any:
                 ret.append(f'    if not isinstance({arg},Term) and not isinstance({arg},{typ.__name__}):')
@@ -738,11 +772,11 @@ def __create_atom(cls: ClassVar):
 
         code = compile(f"{sig}\n    {str_body}", f'<pyspel|constructor of {class_name}|>', "exec")
         c = None
-        for i in code.co_consts:
-            if isinstance(i, CodeType):
-                c = i
+        for co_const in code.co_consts:
+            if isinstance(co_const, CodeType):
+                c = co_const
                 break
-        f = FunctionType(c, glbs)
+        f = FunctionType(c, globals_)
         f.__defaults__ = tuple(defaults)
         return f
 
@@ -767,7 +801,7 @@ def __create_atom(cls: ClassVar):
     def create_new_object():
         if has_method('__init__'):
             raise ValueError("cannot process classes with __init__() constructor")
-        inherit = f'Atom.__init__(self, predicate=Predicate("{pred_name}"))'
+        inherit = f'Atom.__init__(self, predicate=Predicate("{predicate_name}"))'
 
         body = [f'if _as is not None and not isinstance(_as, str):',
                 f'    raise ValueError(f"Expected str for _as, got {{type(_as)}}")',
@@ -784,14 +818,14 @@ def __create_atom(cls: ClassVar):
                 f'        _ = "__default__"',
                 f'    if _ not in {class_name}.__registered:',
                 f'        raise ValueError(f"{{_}} is not registered, did you forget to use _as before?")']
-        for i in init_args:
-            if i != "_" and i != "_as":
-                body.append(f'    if {i} is not None:')
+        for arg in init_args:
+            if arg != "_" and arg != "_as":
+                body.append(f'    if {arg} is not None:')
                 body.append(f'        raise ValueError("if _ is used all parameters must be None")')
-                body.append(f'    self.{i} = {class_name}.__registered[_].{i}')
+                body.append(f'    self.{arg} = {class_name}.__registered[_].{arg}')
         body.append(f'    return')
         if len(init_args) > 0:
-            args = ('self, ') + ', '.join(init_args)
+            args = 'self, ' + ', '.join(init_args)
             sig = f"def __init__({args}):"
             for k, v in annotations.items():
                 body.extend(init_arg(k, v))
@@ -801,12 +835,12 @@ def __create_atom(cls: ClassVar):
         code = compile(f"{sig}\n    {inherit}\n    {str_body}", f'<pyspel|constructor of {class_name}|>', "exec")
 
         c = None
-        for i in code.co_consts:
-            if isinstance(i, CodeType):
-                c = i
+        for co_const in code.co_consts:
+            if isinstance(co_const, CodeType):
+                c = co_const
                 break
-        f = FunctionType(c, glbs)
-        f.__defaults__ = tuple([None for i in init_args])
+        f = FunctionType(c, globals_)
+        f.__defaults__ = tuple([None for _ in init_args])
         setattr(cls, "__registered", dict())
         setattr(cls, "__init__", f)
         create_load_store_methods()
@@ -832,3 +866,7 @@ def var(name: str) -> Term:
     if len(name) == 0:
         raise ValueError("Name cannot be empty")
     return Term(ObjectVariable("VAR_" + name))
+
+
+def hide() -> Term:
+    return Term(ObjectVariable("_"))

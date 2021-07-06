@@ -33,6 +33,21 @@ p += edges
 p += colors
 
 
+def test(problem):
+    def guess():
+        return When(Node().s("n")).guess({Assign(Node.l("n"), Color().s("c")): Color.l("c")}, exactly=1)
+    p1 = Problem()
+    p1 += guess()
+    res = solver.solve(problem=p1)
+    all_assignments = []
+    if res.status == Result.HAS_SOLUTION:
+        assert len(res.answers) == 1
+        answer = res.answers[0]
+        all_assignments = answer.get_atom_occurrences(Assign())
+    print(all_assignments)
+    return None
+
+
 def encoding1(problem):
     def guess():
         return When(Node().s("n")).guess({Assign(Node.l("n"), Color().s("c")): Color.l("c")}, exactly=1)
@@ -77,20 +92,17 @@ def encoding_propositional(problem):
 
 
 encoding1(problem=p)
+print(p)
 solver = SolverWrapper(solver_path="/usr/local/bin/clingo")
-try:
-    with asp_time_limit(seconds=10):
-        res = solver.solve(problem=p)
-        if res.status == Result.HAS_SOLUTION:
-            assert len(res.answers) == 1
-            answer = res.answers[0]
-            result = answer.get_atom_occurrences(Assign())
-            print("Found solution: ")
-            for assignment in result:
-                print("Node %s to color %s" % (assignment.node.value.value, str(assignment.color.value)))
-        elif res.status == Result.NO_SOLUTION:
-            print("No solution found!")
-        else:
-            print("Unknown")
-except TimeoutException as e:
-    print("Timed out!")
+res = solver.solve(problem=p, timeout=10)
+if res.status == Result.HAS_SOLUTION:
+    assert len(res.answers) == 1
+    answer = res.answers[0]
+    result = answer.get_atom_occurrences(Assign())
+    print("Found solution: ")
+    for assignment in result:
+        print("Node %s to color %s" % (assignment.node.value.value, str(assignment.color.value)))
+elif res.status == Result.NO_SOLUTION:
+    print("No solution found!")
+else:
+    print("Unknown")
