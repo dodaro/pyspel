@@ -189,7 +189,7 @@ class Atom:
                     try:
                         element = int(my_terms[i])
                     except ValueError:
-                        element = Atom(Predicate(my_terms[i]))
+                        element = eval(my_terms[i])
                     terms.append(element)
                 i += 1
             elif isinstance(self.__dict__[term], Atom):
