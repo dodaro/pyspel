@@ -66,6 +66,7 @@ def _run_solver(rules, solver_path, options, timeout):
     commands.append(filename)
     solver = subprocess.Popen(commands, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     killed = False
+    exit_code = 1
     try:
         stdout, stderr = solver.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -73,9 +74,13 @@ def _run_solver(rules, solver_path, options, timeout):
         sleep(3)
         solver.kill()
         stdout, stderr = solver.communicate()
+        exit_code = 11
         killed = True
+
+    if not killed:
+        exit_code = solver.returncode
     os.remove(filename)
-    return stdout.decode(), stderr.decode(), solver.returncode, killed
+    return stdout.decode(), stderr.decode(), exit_code, killed
 
 
 @dataclass(frozen=True)
