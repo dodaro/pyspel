@@ -81,12 +81,12 @@ def process(result, process_line, predicate_names):
             process_line = process_line.replace(f"{predicate_name}(", "(")
             result[predicate_name].append(eval(process_line))
 
-
 if len(sys.argv) != 2:
     print(f"Usage: python3 {sys.argv[0]} asp_instance", file=sys.stderr)
     exit(1)
 
 p = Problem()
+
 instance = open(sys.argv[1], "r")
 predicates = ["f", "user", "global_capacity", "fraction_user", "max_representations"]
 result = {}
