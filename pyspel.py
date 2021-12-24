@@ -566,6 +566,8 @@ class Problem:
     def __add(self, definition):
         if issubclass(type(definition), Atom):
             definition = Define(definition)
+        if isinstance(definition, str):
+            definition = Define(definition)
         if not isinstance(definition, Definition):
             raise ValueError("Expected rule, got %s" % type(definition))
         self.rules.append(definition)
