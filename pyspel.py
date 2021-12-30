@@ -215,8 +215,16 @@ class Atom:
                 terms.append(t.to_python_class())
             elif not isinstance(t, Predicate):
                 terms.append(t.name)
-        res = type(self)(*terms)
-        return res
+        name = self.predicate.name[0].upper() + self.predicate.name[1:]
+        cls = globals()[name]
+        args = getattr(cls, '__annotations__', {})
+        new_args = {}
+        count = 0
+        for i in args:
+            new_args[i] = terms[count]
+            setattr(cls, f'{i}', terms[count])
+            count += 1
+        return cls
 
     def __str__(self):
         terms = []
@@ -649,6 +657,15 @@ class Answer:
         for at in self._answer_set:
             if at.startswith(atom_name.predicate.name):
                 res.append(atom_name.create_atom_from_str(at))
+        return res
+
+    def get_class_occurrences(self, atom_name):
+        if not isinstance(atom_name, Atom):
+            raise ValueError("Expected atom as parameter")
+        res = []
+        for at in self._answer_set:
+            if at.startswith(atom_name.predicate.name):
+                res.append(atom_name.create_atom_from_str(at).to_python_class())
         return res
 
 
