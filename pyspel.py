@@ -205,6 +205,19 @@ class Atom:
         res = type(self)(*terms)
         return res
 
+    def to_python_class(self):
+        terms = []
+        for term in self.__dict__:
+            t = self.__dict__[term]
+            if isinstance(t, Term):
+                terms.append(t.value)
+            elif isinstance(t, Atom):
+                terms.append(t.to_python_class())
+            elif not isinstance(t, Predicate):
+                terms.append(t.name)
+        res = type(self)(*terms)
+        return res
+
     def __str__(self):
         terms = []
         for term in self.__dict__:
