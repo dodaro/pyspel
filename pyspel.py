@@ -54,9 +54,11 @@ def _get_terms(predicate_name, atom_name):
 
 def _run_solver(rules, solver_path, options, timeout):
     filename = tempfile.gettempdir() + os.path.sep + "pyspel_tmp_program_%s" % uuid.uuid4()
+    output_filename = tempfile.gettempdir() + os.path.sep + "pyspel_tmp_program_%s.json" % uuid.uuid4()
     with open(filename, "w+") as f:
         f.write(rules)
         f.close()
+    out = open(output_filename, "w")
 
     if solver_path is None:
         commands = ["clingo"]
@@ -64,7 +66,7 @@ def _run_solver(rules, solver_path, options, timeout):
         commands = [solver_path]
     commands.extend(options)
     commands.append(filename)
-    solver = subprocess.Popen(commands, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    solver = subprocess.Popen(commands, stdin=None, stdout=out, stderr=subprocess.PIPE)
     killed = False
     exit_code = 1
     try:
@@ -76,11 +78,16 @@ def _run_solver(rules, solver_path, options, timeout):
         stdout, stderr = solver.communicate()
         exit_code = 11
         killed = True
+    out.close()
 
     if not killed:
         exit_code = solver.returncode
     os.remove(filename)
-    return stdout.decode(), stderr.decode(), exit_code, killed
+    output = ""
+    with open(output_filename, "r") as o:
+        output = "\n".join(o.readlines())
+    os.remove(output_filename)
+    return output, stderr.decode(), exit_code, killed
 
 
 @dataclass(frozen=True)
