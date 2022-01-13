@@ -1,4 +1,4 @@
-from pyspel import *
+from pyspel.pyspel import *
 
 
 @atom

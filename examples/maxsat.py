@@ -1,4 +1,4 @@
-from pyspel import *
+from pyspel.pyspel import *
 
 """
 clauses(C) :- clause(C).
