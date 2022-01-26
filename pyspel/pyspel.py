@@ -691,12 +691,11 @@ class ASPUtilities:
         res = json.loads(stdout)
         if res['Result'] == 'SATISFIABLE':
             costs = []
-            r = Result(Result.HAS_SOLUTION)
             assert len(res['Call'][0]['Witnesses']) == 1
             answer_set = res['Call'][0]['Witnesses'][0]
+            output = []
             if 'Value' in answer_set:
                 answer = Answer(answer_set['Value'], costs, False)
-                output = []
                 for atom_name in atoms:
                     output.extend(answer.get_atom_occurrences(atom_name=atom_name))
             return output
