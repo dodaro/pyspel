@@ -224,14 +224,15 @@ class Atom:
                 terms.append(t.name)
         name = self.predicate.name[0].upper() + self.predicate.name[1:]
         cls = globals()[name]
+        obj = cls()
         args = getattr(cls, '__annotations__', {})
         new_args = {}
         count = 0
         for i in args:
             new_args[i] = terms[count]
-            setattr(cls, f'{i}', terms[count])
+            setattr(obj, f'{i}', terms[count])
             count += 1
-        return cls
+        return obj
 
     def __str__(self):
         terms = []
