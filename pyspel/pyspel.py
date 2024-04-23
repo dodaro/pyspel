@@ -10,7 +10,7 @@ from time import sleep
 from types import FunctionType, CodeType
 from typing import Any, ClassVar
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 invalid_exit_codes = {1, 65}
 
