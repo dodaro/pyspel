@@ -17,7 +17,6 @@ setup(
   url='https://github.com/dodaro/pyspel',
   download_url='https://github.com/dodaro/pyspel/archive/refs/tags/v1.0.1.tar.gz',
   keywords=['answer set programming', 'specification language', 'combinatorial problems'],
-  install_requires=['decorator'],
   classifiers=[
     'Development Status :: 4 - Beta',
     'Intended Audience :: Developers',
@@ -28,5 +27,7 @@ setup(
     'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
   ],
 )
