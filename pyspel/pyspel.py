@@ -145,20 +145,36 @@ class Term:
             other = Term(other)
         return Term._arithmetic(self.value, other.value, "+")
 
+    def __radd__(self, other):
+        return self.__add__(other)
+
     def __sub__(self, other):
         if not isinstance(other, Term):
             other = Term(other)
         return Term._arithmetic(self.value, other.value, "-")
+
+    def __rsub__(self, other):
+        if not isinstance(other, Term):
+            other = Term(other)
+        return Term._arithmetic(other.value, self.value, "-")
 
     def __mul__(self, other):
         if not isinstance(other, Term):
             other = Term(other)
         return Term._arithmetic(self.value, other.value, "*")
 
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
     def __truediv__(self, other):
         if not isinstance(other, Term):
             other = Term(other)
         return Term._arithmetic(self.value, other.value, "/")
+
+    def __rtruediv__(self, other):
+        if not isinstance(other, Term):
+            other = Term(other)
+        return Term._arithmetic(other.value, self.value, "/")
 
     def __mod__(self, other):
         if not isinstance(other, Term):
