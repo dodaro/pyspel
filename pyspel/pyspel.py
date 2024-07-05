@@ -15,8 +15,12 @@ __version__ = "1.0.1"
 invalid_exit_codes = {1, 65}
 
 
-def domain(min, max):
-    return Term(ObjectVariable(f'{min}..{max}'))
+def abs_v(value):
+    return Term(ObjectVariable(f'|{value}|'))
+
+
+def domain(min_, max_):
+    return Term(ObjectVariable(f'{min_}..{max_}'))
 
 
 def _get_terms(predicate_name, atom_name):
